@@ -1,37 +1,37 @@
 // Copyright 2013, 2014, 2015 Kevin Reid <kpreid@switchb.org>
-// 
+//
 // This file is part of ShinySDR.
-// 
+//
 // ShinySDR is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // ShinySDR is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License
 // along with ShinySDR.  If not, see <http://www.gnu.org/licenses/>.
 
 define(['./values', './events'], function (values, events) {
   'use strict';
-  
+
   var BulkDataType = values.BulkDataType;
   var Cell = values.Cell;
   var CommandCell = values.CommandCell;
   var typeFromDesc = values.typeFromDesc;
-  
+
   var exports = {};
-  
+
   function identity(x) { return x; }
-  
+
   function statusCategory(httpStatus) {
     return Math.floor(httpStatus / 100);
   }
   exports.statusCategory = statusCategory;
-  
+
   function makeXhrStateCallback(r, whenReady) {
     return function() {
       if (r.readyState === 4) {
@@ -39,7 +39,7 @@ define(['./values', './events'], function (values, events) {
       }
     };
   }
-  
+
   function xhrpost(url, data, opt_callback) {
     var r = new XMLHttpRequest();
     r.open('POST', url, true);
@@ -52,7 +52,7 @@ define(['./values', './events'], function (values, events) {
     console.log(url, data);
   }
   exports.xhrpost = xhrpost;
-  
+
   function xhrdelete(url, opt_callback) {
     var r = new XMLHttpRequest();
     r.open('DELETE', url, true);
@@ -64,7 +64,7 @@ define(['./values', './events'], function (values, events) {
     console.log('DELETE', url);
   }
   exports.xhrdelete = xhrdelete;
-  
+
   function externalGet(url, responseType, callback) {
     var r = new XMLHttpRequest();
     r.open('GET', url, true);
@@ -81,7 +81,7 @@ define(['./values', './events'], function (values, events) {
     r.send();
   }
   exports.externalGet = externalGet;
-  
+
   function ReadWriteCell(setter, assumed, type) {
     Cell.call(this, type);
     var value = assumed;
@@ -117,22 +117,22 @@ define(['./values', './events'], function (values, events) {
   }
   ReadWriteCell.prototype = Object.create(Cell.prototype, {constructor: {value: ReadWriteCell}});
   exports.ReadWriteCell = ReadWriteCell;
-  
+
   function ReadCell(setter, /* initial */ value, type, transform) {
     Cell.call(this, type);
-    
+
     this._update = function(data) {
       value = transform(data);
       this.n.notify();
     }.bind(this);
-    
+
     this.get = function() {
       return value;
     };
   }
   ReadCell.prototype = Object.create(Cell.prototype, {constructor: {value: ReadCell}});
   exports.ReadCell = ReadCell;
-  
+
   function RemoteCommandCell(setter, type) {
     // TODO: type is kind of useless, make it useful or make it explicitly stubbed out
     function setterAdapter(callback) {
@@ -142,7 +142,7 @@ define(['./values', './events'], function (values, events) {
   }
   RemoteCommandCell.prototype = Object.create(CommandCell.prototype, {constructor: {value: RemoteCommandCell}});
   //exports.CommandCell = CommandCell;  // not yet needed, params in flux, so not exported yet
-  
+
   function BulkDataCell(setter, type) {
     var fft = new Float32Array(1);
     fft[0] = -1e50;
@@ -152,7 +152,7 @@ define(['./values', './events'], function (values, events) {
     // kludge to ensure that widgets get all of the frames
     // TODO: put this on a more general and sound framework
     var subscriptions = [];
-    
+
     // infoAndFFT is of the format [{freq:<number>, rate:<number>}, <Float32Array>]
     function transform(buffer) {
       var newValue;
@@ -186,12 +186,12 @@ define(['./values', './events'], function (values, events) {
       for (var i = 0; i < subscriptions.length; i++) {
         (0,subscriptions[i])(newValue);
       }
-      
+
       return newValue;
     }
-    
+
     ReadCell.call(this, setter, lastValue, type, transform);
-    
+
     this.subscribe = function(callback) {
       // TODO need to provide for unsubscribing
       subscriptions.push(callback);
@@ -200,23 +200,27 @@ define(['./values', './events'], function (values, events) {
   }
   BulkDataCell.prototype = Object.create(ReadCell.prototype, {constructor: {value: BulkDataCell}});
   exports.BulkDataCell = BulkDataCell;
-  
+
   function setNonEnum(o, p, v) {
     Object.defineProperty(o, p, {
       value: v,
       configurable: true
     })
   }
-  
+
   // use same hostname and path as document, but WS instead of HTTP
   function convertToWebSocketURL(path) {
     // TODO needs to be more robust
     var hostRelPath = /^\//.test(path) ? path : document.location.pathname.replace(/\/$/, '') + '/' + path;
     var secure = document.location.protocol === 'http:' ? '' : 's';
-    return 'ws' + secure + '://' + document.location.hostname + ':' + (parseInt(document.location.port) + 1) + hostRelPath;
+    if(document.location.port === "") {
+      return 'ws' + secure + '://' + document.location.hostname + '/websocket' + hostRelPath;
+    } else {
+      return 'ws' + secure + '://' + document.location.hostname + ':' + (parseInt(document.location.port) + 1) + hostRelPath;
+    }
   }
   exports.convertToWebSocketURL = convertToWebSocketURL;
-  
+
   function openWebSocket(wsURL) {
     // TODO: Have server deliver websocket URL, remove port number requirement
     var ws = new WebSocket(wsURL);
@@ -225,7 +229,7 @@ define(['./values', './events'], function (values, events) {
     }, true);
     return ws;
   }
-  
+
   var minRetryTime = 1000;
   var maxRetryTime = 20000;
   var backoff = 1.05;
@@ -257,7 +261,7 @@ define(['./values', './events'], function (values, events) {
     go();
   };
   exports.retryingConnection = retryingConnection;
-  
+
   function makeBlock(url, interfaces) {
     // TODO convert block operations to use state stream too
     var block = {};
@@ -279,7 +283,7 @@ define(['./values', './events'], function (values, events) {
     }
     return block;
   }
-  
+
   // TODO: too many args, figure out an object that is a sensible bundle
   function makeCell(url, setter, id, desc, idMap) {
     var cell;
@@ -301,13 +305,13 @@ define(['./values', './events'], function (values, events) {
     }
     return [cell, cell._update];
   }
-  
+
   // connectionStateCallback is an optional function of 2 arguments, the first being a enum-ish string identifying the state/problem/notice and the second being details.
   function connect(rootURL, connectionStateCallback) {
     if (!connectionStateCallback) connectionStateCallback = function () {};
-    
+
     var rootCell = new ReadCell(null, null, values.block, identity);
-    
+
     // TODO: URL contents are no longer actually used. URL should be used to derive state stream URL
     //externalGet(rootURL, 'text', function(text) { ... });
 
@@ -318,14 +322,14 @@ define(['./values', './events'], function (values, events) {
       var idMap = Object.create(null);
       var updaterMap = Object.create(null);
       var isCellMap = Object.create(null);
-      
+
       var callbackMap = Object.create(null);
       var nextCallbackId = 0;
-      
+
       idMap[0] = rootCell;
       updaterMap[0] = function (id) { rootCell._update(idMap[id]); };
       isCellMap[0] = true;
-      
+
       function oneMessage(message) {
         var op = message[0];
         var id = message[1];
@@ -383,7 +387,7 @@ define(['./values', './events'], function (values, events) {
             console.error('unknown state stream message', message);
         }
       }
-      
+
       function oneBinaryMessage(buffer) {
         // Currently, BulkDataCell updates are the only type of binary messages.
         var view = new DataView(buffer);
@@ -391,7 +395,7 @@ define(['./values', './events'], function (values, events) {
         var cell_updater = updaterMap[id];
         cell_updater(buffer);
       }
-      
+
       ws.onmessage = function (event) {
         // TODO: close connection on exception here
         if (typeof event.data === 'string') {
@@ -402,12 +406,12 @@ define(['./values', './events'], function (values, events) {
           console.error('Unknown object from state stream onmessage:', event.data);
         }
       };
-      
+
     });
 
     return rootCell;
   }
   exports.connect = connect;
-  
+
   return Object.freeze(exports);
 });
